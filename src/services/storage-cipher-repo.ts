@@ -1,9 +1,31 @@
 import type { Cipher } from '../types';
 
-function normalizeOptionalId(value: unknown): string | null {
+function isUuidLike(value: string): boolean {
+  return /^[a-f0-9-]{36}$/i.test(value);
+}
+
+function normalizeOptionalId(value: unknown, requireUuid: boolean = false): string | null {
   if (value == null) return null;
   const normalized = String(value).trim();
-  return normalized ? normalized : null;
+  if (!normalized) return null;
+  if (requireUuid && !isUuidLike(normalized)) return null;
+  return normalized;
+}
+
+function normalizeTimestamp(value: unknown, fallback: string): string {
+  const normalized = String(value || '').trim();
+  if (!normalized) return fallback;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return parsed.toISOString();
+}
+
+function normalizeNullableTimestamp(value: unknown): string | null {
+  const normalized = String(value || '').trim();
+  if (!normalized) return null;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
 }
 
 type SafeBind = (stmt: D1PreparedStatement, ...values: any[]) => D1PreparedStatement;
@@ -31,10 +53,18 @@ function parseCipherRow(row: CipherRow | null | undefined): Cipher | null {
   if (!row?.data) return null;
   try {
     const parsed = JSON.parse(row.data) as Cipher;
-    const folderId = normalizeOptionalId(row.folder_id ?? parsed.folderId ?? null);
+    const now = new Date().toISOString();
+    const cipherId = normalizeOptionalId(row.id, true);
+    if (!cipherId) {
+      console.warn('Skipping malformed cipher row with invalid id', { id: row.id, userId: row.user_id });
+      return null;
+    }
+    const folderId = normalizeOptionalId(row.folder_id ?? parsed.folderId ?? null, true);
+    const createdAt = normalizeTimestamp(row.created_at ?? parsed.createdAt, now);
+    const updatedAt = normalizeTimestamp(row.updated_at ?? parsed.updatedAt, createdAt);
     return {
       ...parsed,
-      id: row.id,
+      id: cipherId,
       userId: row.user_id,
       type: Number(row.type) || Number(parsed.type) || 1,
       folderId,
@@ -43,10 +73,10 @@ function parseCipherRow(row: CipherRow | null | undefined): Cipher | null {
       favorite: row.favorite != null ? !!row.favorite : !!parsed.favorite,
       reprompt: row.reprompt ?? parsed.reprompt ?? 0,
       key: row.key ?? parsed.key ?? null,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      archivedAt: row.archived_at ?? parsed.archivedAt ?? parsed.archivedDate ?? null,
-      deletedAt: row.deleted_at ?? null,
+      createdAt,
+      updatedAt,
+      archivedAt: normalizeNullableTimestamp(row.archived_at ?? parsed.archivedAt ?? parsed.archivedDate ?? null),
+      deletedAt: normalizeNullableTimestamp(row.deleted_at ?? parsed.deletedAt ?? null),
     };
   } catch {
     console.error('Corrupted cipher data, id:', row.id);

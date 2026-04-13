@@ -1,7 +1,7 @@
 import { Env, SyncResponse, CipherResponse, FolderResponse, ProfileResponse } from '../types';
 import { StorageService } from '../services/storage';
 import { errorResponse } from '../utils/response';
-import { cipherToResponse } from './ciphers';
+import { cipherToResponse, isClientCompatibleCipher } from './ciphers';
 import { isClientCompatibleSend, sendToResponse } from './sends';
 import { LIMITS } from '../config/limits';
 import {
@@ -85,7 +85,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
   };
 
   const cipherResponses: CipherResponse[] = [];
-  for (const cipher of ciphers) {
+  for (const cipher of ciphers.filter(isClientCompatibleCipher)) {
     cipherResponses.push(cipherToResponse(cipher, attachmentsByCipher.get(cipher.id) || []));
   }
 

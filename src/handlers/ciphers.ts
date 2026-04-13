@@ -13,6 +13,10 @@ function normalizeOptionalId(value: unknown): string | null {
   return normalized ? normalized : null;
 }
 
+function isUuidLike(value: string): boolean {
+  return /^[a-f0-9-]{36}$/i.test(value);
+}
+
 async function notifyVaultSyncForRequest(
   request: Request,
   env: Env,
@@ -39,6 +43,10 @@ function normalizeCipherTimestamp(value: unknown): string | null {
   return parsed.toISOString();
 }
 
+function normalizeCipherRequiredTimestamp(value: unknown, fallback: string): string {
+  return normalizeCipherTimestamp(value) ?? fallback;
+}
+
 function readCipherArchivedAt(source: any, fallback: string | null = null): string | null {
   const archived = getAliasedProp(source, ['archivedAt', 'ArchivedAt', 'archivedDate', 'ArchivedDate']);
   return archived.present ? normalizeCipherTimestamp(archived.value) : fallback;
@@ -59,6 +67,17 @@ function normalizeCipherForStorage(cipher: Cipher): Cipher {
     ? normalizeCipherTimestamp(cipher.archivedAt) ?? null
     : normalizeCipherTimestamp(cipher.archivedDate) ?? null;
   return syncCipherComputedAliases(cipher);
+}
+
+export function isClientCompatibleCipher(cipher: Cipher): boolean {
+  if (!isUuidLike(String(cipher?.id || '').trim())) {
+    console.warn('Skipping malformed cipher in API response', {
+      cipherId: cipher?.id ?? null,
+      userId: cipher?.userId ?? null,
+    });
+    return false;
+  }
+  return true;
 }
 
 export function normalizeCipherLoginForStorage(login: any): any {
@@ -125,6 +144,9 @@ export function cipherToResponse(
   const normalizedLogin = normalizeCipherLoginForCompatibility((passthrough as any).login ?? null);
   const normalizedSshKey = normalizeCipherSshKeyForCompatibility((passthrough as any).sshKey ?? null);
 
+  const normalizedCreatedAt = normalizeCipherRequiredTimestamp(cipher.createdAt, new Date().toISOString());
+  const normalizedUpdatedAt = normalizeCipherRequiredTimestamp(cipher.updatedAt, normalizedCreatedAt);
+
   return {
     // Pass through ALL stored cipher fields (known + unknown)
     ...passthrough,
@@ -133,10 +155,10 @@ export function cipherToResponse(
     type: Number(cipher.type) || 1,
     organizationId: null,
     organizationUseTotp: false,
-    creationDate: createdAt,
-    revisionDate: updatedAt,
-    deletedDate: deletedAt,
-    archivedDate: archivedAt ?? null,
+    creationDate: normalizedCreatedAt,
+    revisionDate: normalizedUpdatedAt,
+    deletedDate: normalizeCipherTimestamp(deletedAt) ?? null,
+    archivedDate: normalizeCipherTimestamp(archivedAt) ?? null,
     edit: true,
     viewPassword: true,
     permissions: {
@@ -177,6 +199,8 @@ export async function handleGetCiphers(request: Request, env: Env, userId: strin
       ? ciphers
       : ciphers.filter(c => !c.deletedAt);
   }
+
+  filteredCiphers = filteredCiphers.filter(isClientCompatibleCipher);
 
   const attachmentsByCipher = await storage.getAttachmentsByCipherIds(
     filteredCiphers.map((cipher) => cipher.id)
