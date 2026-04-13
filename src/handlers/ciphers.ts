@@ -17,6 +17,93 @@ function isUuidLike(value: string): boolean {
   return /^[a-f0-9-]{36}$/i.test(value);
 }
 
+function looksLikeCipherString(value: unknown): boolean {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+  return /^\d+\.[A-Za-z0-9+/=]+\|[A-Za-z0-9+/=]+(?:\|[A-Za-z0-9+/=]+)?$/.test(normalized);
+}
+
+function isEncryptedFieldCompatible(value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return true;
+  return looksLikeCipherString(value);
+}
+
+function hasCompatibleEncryptedFields(cipher: Cipher): boolean {
+  if (!isEncryptedFieldCompatible(cipher.key)) return false;
+  if (!isEncryptedFieldCompatible(cipher.name)) return false;
+  if (!isEncryptedFieldCompatible(cipher.notes)) return false;
+
+  const login = cipher.login;
+  if (login) {
+    if (!isEncryptedFieldCompatible(login.username)) return false;
+    if (!isEncryptedFieldCompatible(login.password)) return false;
+    if (!isEncryptedFieldCompatible(login.totp)) return false;
+    if (Array.isArray(login.uris)) {
+      for (const uri of login.uris) {
+        if (!isEncryptedFieldCompatible(uri?.uri)) return false;
+        if (!isEncryptedFieldCompatible(uri?.uriChecksum)) return false;
+      }
+    }
+  }
+
+  const card = cipher.card;
+  if (card) {
+    if (!isEncryptedFieldCompatible(card.cardholderName)) return false;
+    if (!isEncryptedFieldCompatible(card.brand)) return false;
+    if (!isEncryptedFieldCompatible(card.number)) return false;
+    if (!isEncryptedFieldCompatible(card.expMonth)) return false;
+    if (!isEncryptedFieldCompatible(card.expYear)) return false;
+    if (!isEncryptedFieldCompatible(card.code)) return false;
+  }
+
+  const identity = cipher.identity;
+  if (identity) {
+    const values = [
+      identity.title,
+      identity.firstName,
+      identity.middleName,
+      identity.lastName,
+      identity.address1,
+      identity.address2,
+      identity.address3,
+      identity.city,
+      identity.state,
+      identity.postalCode,
+      identity.country,
+      identity.company,
+      identity.email,
+      identity.phone,
+      identity.ssn,
+      identity.username,
+      identity.passportNumber,
+      identity.licenseNumber,
+    ];
+    if (values.some((value) => !isEncryptedFieldCompatible(value))) return false;
+  }
+
+  const sshKey = cipher.sshKey;
+  if (sshKey) {
+    if (!isEncryptedFieldCompatible(sshKey.privateKey)) return false;
+    if (!isEncryptedFieldCompatible(sshKey.publicKey)) return false;
+    if (!isEncryptedFieldCompatible(sshKey.keyFingerprint)) return false;
+  }
+
+  if (Array.isArray(cipher.fields)) {
+    for (const field of cipher.fields) {
+      if (!isEncryptedFieldCompatible(field?.name)) return false;
+      if (!isEncryptedFieldCompatible(field?.value)) return false;
+    }
+  }
+
+  if (Array.isArray(cipher.passwordHistory)) {
+    for (const entry of cipher.passwordHistory) {
+      if (!isEncryptedFieldCompatible(entry?.password)) return false;
+    }
+  }
+
+  return true;
+}
+
 async function notifyVaultSyncForRequest(
   request: Request,
   env: Env,
@@ -72,6 +159,13 @@ function normalizeCipherForStorage(cipher: Cipher): Cipher {
 export function isClientCompatibleCipher(cipher: Cipher): boolean {
   if (!isUuidLike(String(cipher?.id || '').trim())) {
     console.warn('Skipping malformed cipher in API response', {
+      cipherId: cipher?.id ?? null,
+      userId: cipher?.userId ?? null,
+    });
+    return false;
+  }
+  if (!hasCompatibleEncryptedFields(cipher)) {
+    console.warn('Skipping cipher with legacy/plaintext encrypted fields in API response', {
       cipherId: cipher?.id ?? null,
       userId: cipher?.userId ?? null,
     });
