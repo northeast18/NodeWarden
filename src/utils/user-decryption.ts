@@ -1,13 +1,25 @@
 import { User, UserDecryptionOptions } from '../types';
 
+function normalizeOptionalPublicKey(value: unknown): string {
+  if (value == null) return '';
+  return String(value);
+}
+
 export function buildAccountKeys(user: Pick<User, 'privateKey' | 'publicKey'>): Record<string, unknown> | null {
-  void user;
-  // Newer official desktop/browser clients can hard-fail when AccountKeys is
-  // present but not shaped exactly as upstream expects. NodeWarden still
-  // returns legacy Key + PrivateKey fields, and official clients keep a
-  // compatibility path for those. Prefer the legacy path until a fully
-  // validated AccountKeys implementation is available.
-  return null;
+  if (!user.privateKey) {
+    return null;
+  }
+
+  const publicKey = normalizeOptionalPublicKey(user.publicKey);
+
+  return {
+    publicKeyEncryptionKeyPair: {
+      wrappedPrivateKey: user.privateKey,
+      publicKey,
+      Object: 'publicKeyEncryptionKeyPair',
+    },
+    Object: 'privateKeys',
+  };
 }
 
 export function buildMasterPasswordUnlock(
