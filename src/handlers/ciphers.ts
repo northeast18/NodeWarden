@@ -28,80 +28,100 @@ function isEncryptedFieldCompatible(value: unknown): boolean {
   return looksLikeCipherString(value);
 }
 
-function hasCompatibleEncryptedFields(cipher: Cipher): boolean {
-  if (!isEncryptedFieldCompatible(cipher.key)) return false;
-  if (!isEncryptedFieldCompatible(cipher.name)) return false;
-  if (!isEncryptedFieldCompatible(cipher.notes)) return false;
+function sanitizeEncryptedField(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (isEncryptedFieldCompatible(value)) return String(value);
+  return null;
+}
 
-  const login = cipher.login;
-  if (login) {
-    if (!isEncryptedFieldCompatible(login.username)) return false;
-    if (!isEncryptedFieldCompatible(login.password)) return false;
-    if (!isEncryptedFieldCompatible(login.totp)) return false;
-    if (Array.isArray(login.uris)) {
-      for (const uri of login.uris) {
-        if (!isEncryptedFieldCompatible(uri?.uri)) return false;
-        if (!isEncryptedFieldCompatible(uri?.uriChecksum)) return false;
-      }
-    }
+function sanitizeCipherForClientCompatibility(cipher: Cipher): Cipher {
+  const next: Cipher = {
+    ...cipher,
+    key: sanitizeEncryptedField(cipher.key),
+    name: sanitizeEncryptedField(cipher.name),
+    notes: sanitizeEncryptedField(cipher.notes),
+  };
+
+  if (cipher.login && typeof cipher.login === 'object') {
+    next.login = {
+      ...cipher.login,
+      username: sanitizeEncryptedField(cipher.login.username),
+      password: sanitizeEncryptedField(cipher.login.password),
+      totp: sanitizeEncryptedField(cipher.login.totp),
+      uris: Array.isArray(cipher.login.uris)
+        ? cipher.login.uris.map((uri) => ({
+            ...uri,
+            uri: sanitizeEncryptedField(uri?.uri),
+            // uriChecksum is optional/legacy in many clients; keep only if encrypted-shaped.
+            uriChecksum: sanitizeEncryptedField(uri?.uriChecksum),
+          }))
+        : null,
+    };
   }
 
-  const card = cipher.card;
-  if (card) {
-    if (!isEncryptedFieldCompatible(card.cardholderName)) return false;
-    if (!isEncryptedFieldCompatible(card.brand)) return false;
-    if (!isEncryptedFieldCompatible(card.number)) return false;
-    if (!isEncryptedFieldCompatible(card.expMonth)) return false;
-    if (!isEncryptedFieldCompatible(card.expYear)) return false;
-    if (!isEncryptedFieldCompatible(card.code)) return false;
+  if (cipher.card && typeof cipher.card === 'object') {
+    next.card = {
+      ...cipher.card,
+      cardholderName: sanitizeEncryptedField(cipher.card.cardholderName),
+      brand: sanitizeEncryptedField(cipher.card.brand),
+      number: sanitizeEncryptedField(cipher.card.number),
+      expMonth: sanitizeEncryptedField(cipher.card.expMonth),
+      expYear: sanitizeEncryptedField(cipher.card.expYear),
+      code: sanitizeEncryptedField(cipher.card.code),
+    };
   }
 
-  const identity = cipher.identity;
-  if (identity) {
-    const values = [
-      identity.title,
-      identity.firstName,
-      identity.middleName,
-      identity.lastName,
-      identity.address1,
-      identity.address2,
-      identity.address3,
-      identity.city,
-      identity.state,
-      identity.postalCode,
-      identity.country,
-      identity.company,
-      identity.email,
-      identity.phone,
-      identity.ssn,
-      identity.username,
-      identity.passportNumber,
-      identity.licenseNumber,
-    ];
-    if (values.some((value) => !isEncryptedFieldCompatible(value))) return false;
+  if (cipher.identity && typeof cipher.identity === 'object') {
+    next.identity = {
+      ...cipher.identity,
+      title: sanitizeEncryptedField(cipher.identity.title),
+      firstName: sanitizeEncryptedField(cipher.identity.firstName),
+      middleName: sanitizeEncryptedField(cipher.identity.middleName),
+      lastName: sanitizeEncryptedField(cipher.identity.lastName),
+      address1: sanitizeEncryptedField(cipher.identity.address1),
+      address2: sanitizeEncryptedField(cipher.identity.address2),
+      address3: sanitizeEncryptedField(cipher.identity.address3),
+      city: sanitizeEncryptedField(cipher.identity.city),
+      state: sanitizeEncryptedField(cipher.identity.state),
+      postalCode: sanitizeEncryptedField(cipher.identity.postalCode),
+      country: sanitizeEncryptedField(cipher.identity.country),
+      company: sanitizeEncryptedField(cipher.identity.company),
+      email: sanitizeEncryptedField(cipher.identity.email),
+      phone: sanitizeEncryptedField(cipher.identity.phone),
+      ssn: sanitizeEncryptedField(cipher.identity.ssn),
+      username: sanitizeEncryptedField(cipher.identity.username),
+      passportNumber: sanitizeEncryptedField(cipher.identity.passportNumber),
+      licenseNumber: sanitizeEncryptedField(cipher.identity.licenseNumber),
+    };
   }
 
-  const sshKey = cipher.sshKey;
-  if (sshKey) {
-    if (!isEncryptedFieldCompatible(sshKey.privateKey)) return false;
-    if (!isEncryptedFieldCompatible(sshKey.publicKey)) return false;
-    if (!isEncryptedFieldCompatible(sshKey.keyFingerprint)) return false;
+  if (cipher.sshKey && typeof cipher.sshKey === 'object') {
+    next.sshKey = {
+      ...cipher.sshKey,
+      privateKey: sanitizeEncryptedField(cipher.sshKey.privateKey) ?? '',
+      publicKey: sanitizeEncryptedField(cipher.sshKey.publicKey) ?? '',
+      keyFingerprint: sanitizeEncryptedField(cipher.sshKey.keyFingerprint) ?? '',
+    };
   }
 
   if (Array.isArray(cipher.fields)) {
-    for (const field of cipher.fields) {
-      if (!isEncryptedFieldCompatible(field?.name)) return false;
-      if (!isEncryptedFieldCompatible(field?.value)) return false;
-    }
+    next.fields = cipher.fields.map((field) => ({
+      ...field,
+      name: sanitizeEncryptedField(field?.name),
+      value: sanitizeEncryptedField(field?.value),
+    }));
   }
 
   if (Array.isArray(cipher.passwordHistory)) {
-    for (const entry of cipher.passwordHistory) {
-      if (!isEncryptedFieldCompatible(entry?.password)) return false;
-    }
+    next.passwordHistory = cipher.passwordHistory
+      .map((entry) => ({
+        ...entry,
+        password: sanitizeEncryptedField(entry?.password) ?? '',
+      }))
+      .filter((entry) => !!entry.password);
   }
 
-  return true;
+  return next;
 }
 
 async function notifyVaultSyncForRequest(
@@ -159,13 +179,6 @@ function normalizeCipherForStorage(cipher: Cipher): Cipher {
 export function isClientCompatibleCipher(cipher: Cipher): boolean {
   if (!isUuidLike(String(cipher?.id || '').trim())) {
     console.warn('Skipping malformed cipher in API response', {
-      cipherId: cipher?.id ?? null,
-      userId: cipher?.userId ?? null,
-    });
-    return false;
-  }
-  if (!hasCompatibleEncryptedFields(cipher)) {
-    console.warn('Skipping cipher with legacy/plaintext encrypted fields in API response', {
       cipherId: cipher?.id ?? null,
       userId: cipher?.userId ?? null,
     });
@@ -233,8 +246,9 @@ export function cipherToResponse(
   cipher: Cipher,
   attachments: Attachment[] = []
 ): CipherResponse {
+  const compatibleCipher = sanitizeCipherForClientCompatibility(cipher);
   // Strip internal-only fields that must not appear in the API response
-  const { userId, createdAt, updatedAt, archivedAt, deletedAt, ...passthrough } = cipher;
+  const { userId, createdAt, updatedAt, archivedAt, deletedAt, ...passthrough } = compatibleCipher;
   const normalizedLogin = normalizeCipherLoginForCompatibility((passthrough as any).login ?? null);
   const normalizedSshKey = normalizeCipherSshKeyForCompatibility((passthrough as any).sshKey ?? null);
 
