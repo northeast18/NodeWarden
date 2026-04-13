@@ -25,6 +25,7 @@ import {
   parseSendType,
   parseStoredSendData,
   sanitizeSendData,
+  isClientCompatibleSend,
   sendToResponse,
   setSendPassword,
   validateDeletionDate,
@@ -97,11 +98,14 @@ export async function handleGetSends(request: Request, env: Env, userId: string)
     sends = await storage.getAllSends(userId);
   }
 
-  const sendResponses = sends.map(sendToResponse);
+  const sendResponses = sends.filter(isClientCompatibleSend).map(sendToResponse);
   return jsonResponse({
     data: sendResponses,
+    Data: sendResponses,
     object: 'list',
+    Object: 'list',
     continuationToken,
+    ContinuationToken: continuationToken,
   });
 }
 

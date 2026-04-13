@@ -2,7 +2,7 @@ import { Env, SyncResponse, CipherResponse, FolderResponse, ProfileResponse } fr
 import { StorageService } from '../services/storage';
 import { errorResponse } from '../utils/response';
 import { cipherToResponse } from './ciphers';
-import { sendToResponse } from './sends';
+import { isClientCompatibleSend, sendToResponse } from './sends';
 import { LIMITS } from '../config/limits';
 import {
   buildAccountKeys,
@@ -10,10 +10,12 @@ import {
   buildUserDecryptionOptions,
 } from '../utils/user-decryption';
 
+const SYNC_CACHE_SCHEMA_VERSION = 'v2-send-compat';
+
 function buildSyncCacheRequest(request: Request, userId: string, revisionDate: string, excludeDomains: boolean): Request {
   const url = new URL(request.url);
   const cacheUrl = new URL(
-    `/__nodewarden/cache/sync/${encodeURIComponent(userId)}/${encodeURIComponent(revisionDate)}/${excludeDomains ? '1' : '0'}`,
+    `/__nodewarden/cache/sync/${SYNC_CACHE_SCHEMA_VERSION}/${encodeURIComponent(userId)}/${encodeURIComponent(revisionDate)}/${excludeDomains ? '1' : '0'}`,
     url.origin
   );
   return new Request(cacheUrl.toString(), { method: 'GET' });
@@ -97,7 +99,7 @@ export async function handleSync(request: Request, env: Env, userId: string): Pr
     });
   }
 
-  const sendResponses = sends.map(sendToResponse);
+  const sendResponses = sends.filter(isClientCompatibleSend).map(sendToResponse);
   const syncResponse: SyncResponse = {
     profile,
     folders: folderResponses,

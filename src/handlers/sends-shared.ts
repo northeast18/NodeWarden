@@ -136,12 +136,49 @@ export function parseStoredSendData(send: Send): Record<string, unknown> {
   }
 }
 
+function withFirstLetterAliases(data: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  const withAliases = { ...data };
+  for (const key of keys) {
+    if (!(key in withAliases)) continue;
+    const alias = key.charAt(0).toUpperCase() + key.slice(1);
+    withAliases[alias] = withAliases[key];
+  }
+  return withAliases;
+}
+
 function normalizeSendDataSizeField(data: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...data };
   if (typeof normalized.size === 'number' && Number.isFinite(normalized.size)) {
     normalized.size = String(Math.trunc(normalized.size));
   }
   return normalized;
+}
+
+function buildCompatibleSendDataPayload(data: Record<string, unknown>): Record<string, unknown> {
+  return withFirstLetterAliases(normalizeSendDataSizeField(data), [
+    'id',
+    'fileName',
+    'size',
+    'sizeName',
+    'text',
+    'hidden',
+  ]);
+}
+
+function hasClientCompatibleSendId(send: Send): boolean {
+  return typeof send.id === 'string' && /^[a-f0-9-]{36}$/i.test(send.id.trim());
+}
+
+export function isClientCompatibleSend(send: Send): boolean {
+  if (hasClientCompatibleSendId(send)) {
+    return true;
+  }
+
+  console.warn('Skipping malformed send in API response', {
+    sendId: send?.id ?? null,
+    userId: send?.userId ?? null,
+  });
+  return false;
 }
 
 export function isSendAvailable(send: Send): boolean {
@@ -335,8 +372,8 @@ export function extractBearerToken(request: Request): string | null {
 }
 
 export function sendToResponse(send: Send): SendResponse {
-  const data = normalizeSendDataSizeField(parseStoredSendData(send));
-  return {
+  const data = buildCompatibleSendDataPayload(parseStoredSendData(send));
+  const response: SendResponse = {
     id: send.id,
     accessId: toAccessId(send.id),
     type: Number(send.type) || 0,
@@ -357,11 +394,32 @@ export function sendToResponse(send: Send): SendResponse {
     deletionDate: send.deletionDate,
     object: 'send',
   };
+  return withFirstLetterAliases(response as Record<string, unknown>, [
+    'id',
+    'accessId',
+    'type',
+    'authType',
+    'name',
+    'notes',
+    'text',
+    'file',
+    'key',
+    'maxAccessCount',
+    'accessCount',
+    'revisionDate',
+    'expirationDate',
+    'deletionDate',
+    'password',
+    'emails',
+    'disabled',
+    'hideEmail',
+    'object',
+  ]) as SendResponse;
 }
 
 export function sendToAccessResponse(send: Send, creatorIdentifier: string | null): Record<string, unknown> {
-  const data = normalizeSendDataSizeField(parseStoredSendData(send));
-  return {
+  const data = buildCompatibleSendDataPayload(parseStoredSendData(send));
+  return withFirstLetterAliases({
     id: send.id,
     type: Number(send.type) || 0,
     name: send.name,
@@ -371,7 +429,7 @@ export function sendToAccessResponse(send: Send, creatorIdentifier: string | nul
     deletionDate: send.deletionDate,
     creatorIdentifier,
     object: 'send-access',
-  };
+  }, ['id', 'type', 'name', 'text', 'file', 'expirationDate', 'deletionDate', 'creatorIdentifier', 'object']);
 }
 
 export async function getCreatorIdentifier(storage: StorageService, send: Send): Promise<string | null> {

@@ -299,6 +299,7 @@ export interface SendResponse {
   expirationDate: string | null;
   deletionDate: string;
   object: string;
+  [key: string]: unknown;
 }
 
 // JWT Payload
